@@ -154,13 +154,12 @@ class CatalogItem:
     title: str
     brand: Optional[str]
     images: list[str]
-    moltpho_price_cents: int
+    offer_price_cents: int
     currency: str
     stock_status: str
     bullet_points: list[str]
-    category: Optional[str]
     soft_expired: bool = False
-    soft_expired_warning: Optional[str] = None
+    prices_may_have_changed: bool = False
 
     @classmethod
     def from_api(cls, data: dict) -> CatalogItem:
@@ -169,13 +168,12 @@ class CatalogItem:
             title=data["title"],
             brand=data.get("brand"),
             images=data.get("images", []),
-            moltpho_price_cents=data.get("offerPriceCents", data.get("moltpho_price_cents", 0)),
+            offer_price_cents=data.get("offerPriceCents", 0),
             currency=data.get("currency", "USD"),
-            stock_status=data.get("stockStatus", data.get("stock_status", "UNKNOWN")),
-            bullet_points=data.get("bulletPoints", data.get("bullet_points", [])),
-            category=data.get("category"),
-            soft_expired=data.get("softExpired", data.get("soft_expired", False)),
-            soft_expired_warning=data.get("softExpiredWarning", data.get("soft_expired_warning")),
+            stock_status=data.get("stockStatus", "UNKNOWN"),
+            bullet_points=data.get("bulletPoints", []),
+            soft_expired=data.get("softExpired", False),
+            prices_may_have_changed=data.get("pricesMayHaveChanged", False),
         )
 
 
@@ -184,33 +182,36 @@ class Quote:
     """Quote response from POST /v1/quotes."""
 
     quote_id: str
-    soft_reservation_id: str
+    soft_reservation_id: Optional[str]
     asin: str
     quantity: int
+    amazon_offer_price_cents: int
+    markup_bps: int
     moltpho_price_cents: int
     tax_cents_est: Optional[int]
     shipping_cents_est: Optional[int]
-    total_due_usd_cents: int
+    total_cents: int
     stock_status: str
     expires_at: datetime
-    payment_requirements: dict
+    shipping_profile_id: Optional[str]
 
     @classmethod
     def from_api(cls, data: dict) -> Quote:
-        # API returns camelCase; support both camelCase and snake_case
-        expires_at_raw = data.get("expiresAt", data.get("expires_at", ""))
+        expires_at_raw = data.get("expiresAt", "")
         return cls(
-            quote_id=data.get("id", data.get("quote_id", "")),
-            soft_reservation_id=data.get("softReservationId", data.get("soft_reservation_id", "")),
+            quote_id=data.get("id", ""),
+            soft_reservation_id=data.get("softReservationId"),
             asin=data["asin"],
             quantity=data["quantity"],
-            moltpho_price_cents=data.get("moltphoPriceCents", data.get("moltpho_price_cents", 0)),
-            tax_cents_est=data.get("taxCentsEst", data.get("tax_cents_est")),
-            shipping_cents_est=data.get("shippingCentsEst", data.get("shipping_cents_est")),
-            total_due_usd_cents=data.get("totalCents", data.get("total_due_usd_cents", 0)),
-            stock_status=data.get("stockStatus", data.get("stock_status", "UNKNOWN")),
+            amazon_offer_price_cents=data.get("amazonOfferPriceCents", 0),
+            markup_bps=data.get("markupBps", 0),
+            moltpho_price_cents=data.get("moltphoPriceCents", 0),
+            tax_cents_est=data.get("taxCentsEst"),
+            shipping_cents_est=data.get("shippingCentsEst"),
+            total_cents=data.get("totalCents", 0),
+            stock_status=data.get("stockStatus", "UNKNOWN"),
             expires_at=datetime.fromisoformat(expires_at_raw.replace("Z", "+00:00")),
-            payment_requirements=data.get("payment_requirements", {}),
+            shipping_profile_id=data.get("shippingProfileId"),
         )
 
     @property
@@ -225,28 +226,29 @@ class Order:
     order_id: str
     status: str
     total_cents: int
+    quote_id: str
+    amazon_order_ref: Optional[str]
+    tracking_ref: Optional[str]
     cancellation_window_ends_at: Optional[datetime]
-    receipt_url: Optional[str]
-    tracking_url: Optional[str]
     created_at: datetime
 
     @classmethod
     def from_api(cls, data: dict) -> Order:
-        # API returns camelCase; support both camelCase and snake_case
-        cancel_raw = data.get("cancellationWindowEndsAt", data.get("cancellation_window_ends_at"))
+        cancel_raw = data.get("cancellationWindowEndsAt")
         cancel_window = None
         if cancel_raw:
             cancel_window = datetime.fromisoformat(
                 cancel_raw.replace("Z", "+00:00")
             )
-        created_raw = data.get("createdAt", data.get("created_at", ""))
+        created_raw = data.get("createdAt", "")
         return cls(
-            order_id=data.get("id", data.get("order_id", "")),
+            order_id=data.get("id", ""),
             status=data["status"],
-            total_cents=data.get("totalCents", data.get("total_cents", 0)),
+            total_cents=data.get("totalCents", 0),
+            quote_id=data.get("quoteId", ""),
+            amazon_order_ref=data.get("amazonOrderRef"),
+            tracking_ref=data.get("trackingRef"),
             cancellation_window_ends_at=cancel_window,
-            receipt_url=data.get("receiptUrl", data.get("receipt_url")),
-            tracking_url=data.get("trackingUrl", data.get("tracking_url")),
             created_at=datetime.fromisoformat(
                 created_raw.replace("Z", "+00:00")
             ),
@@ -258,19 +260,19 @@ class Balance:
     """Balance response from GET /v1/balance."""
 
     available_credit_cents: int
-    staged_refunds_cents: int
+    staged_refund_cents: int
     total_spent_week_cents: int
     total_spent_month_cents: int
-    currency: str
+    display: str
 
     @classmethod
     def from_api(cls, data: dict) -> Balance:
         return cls(
             available_credit_cents=data["available_credit_cents"],
-            staged_refunds_cents=data.get("staged_refunds_cents", 0),
+            staged_refund_cents=data.get("staged_refund_cents", 0),
             total_spent_week_cents=data.get("total_spent_week_cents", 0),
             total_spent_month_cents=data.get("total_spent_month_cents", 0),
-            currency=data.get("currency", "USD"),
+            display=data.get("display", ""),
         )
 
 
@@ -994,6 +996,7 @@ def budget_check(amount_cents: int, creds: Optional[Credentials] = None) -> dict
 
 
 def request_x402_signature(
+    quote_id: str,
     payment_required: dict,
     idempotency_key: str,
     creds: Optional[Credentials] = None,
@@ -1005,10 +1008,11 @@ def request_x402_signature(
     - Custodial wallet service signs EIP-3009 authorization
     - Enforces payTo == MoltphoMall
     - Enforces amount == expected quote total
-    - Sets validBefore to min(10 min from signing, quote.expires_at)
+    - Sets validBefore to min(quote.expires_at, 10 min from signing)
     - Rate limited: max 10 signs/min per agent
 
     Args:
+        quote_id: Quote ID for the order
         payment_required: PAYMENT-REQUIRED blob from 402 response
         idempotency_key: Order idempotency key
         creds: Agent credentials
@@ -1029,8 +1033,8 @@ def request_x402_signature(
             )
 
     payload = {
-        "payment_required": payment_required,
-        "idempotency_key": idempotency_key,
+        "quoteId": quote_id,
+        "paymentRequired": payment_required,
     }
 
     headers = {"Idempotency-Key": idempotency_key}
@@ -1043,7 +1047,7 @@ def request_x402_signature(
         headers=headers,
     )
 
-    return response["payment_signature"]
+    return response["paymentSignature"]
 
 
 # =============================================================================
@@ -1137,6 +1141,7 @@ def create_order(
     except PaymentRequiredError as e:
         # Get x402 signature
         payment_signature = request_x402_signature(
+            quote_id=quote_id,
             payment_required=e.payment_required,
             idempotency_key=idempotency_key,
             creds=creds,
@@ -1390,11 +1395,11 @@ def purchase(
 
         # Track original price for tolerance checking
         if original_price_cents is None:
-            original_price_cents = quote.total_due_usd_cents
+            original_price_cents = quote.total_cents
         else:
             # Check price tolerance (5% per SPEC)
             price_change_bps = abs(
-                (quote.total_due_usd_cents - original_price_cents)
+                (quote.total_cents - original_price_cents)
                 * 10000
                 // original_price_cents
             )
@@ -1403,7 +1408,7 @@ def purchase(
                     code=MoltphoErrorCode.PRICE_CHANGED,
                     message=(
                         f"Price changed beyond tolerance: "
-                        f"${original_price_cents/100:.2f} -> ${quote.total_due_usd_cents/100:.2f}"
+                        f"${original_price_cents/100:.2f} -> ${quote.total_cents/100:.2f}"
                     ),
                     status_code=409,
                 )
